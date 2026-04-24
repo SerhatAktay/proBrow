@@ -1,0 +1,23 @@
+.DS_Store
+
+# Python virtualenvs
+.venv/
+backend/.venv/
+backend/.venv-build/
+**/.venv/
+
+# Build outputs / packaging artifacts
+backend/build/
+backend/dist/
+backend/*.spec
+backend/*.egg-info/
+**/*.egg-info/
+
+# Bytecode / caches
+**/__pycache__/
+**/*.pyc
+
+# Large sample data (keep locally, not in published repo)
+bigwigs/
+hs1.gtf
+

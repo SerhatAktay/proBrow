@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>proBrow</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">proBrow</div>
+
+      <form id="searchForm" class="search">
+        <input
+          id="searchInput"
+          type="text"
+          placeholder="Search gene or coords (chr1:1000-2000)"
+          autocomplete="off"
+          list="geneSuggestList"
+        />
+        <datalist id="geneSuggestList"></datalist>
+        <button type="submit">Go</button>
+      </form>
+
+      <button id="tracksButton" class="helpButton" type="button" title="Reorder tracks">
+        Tracks
+      </button>
+      <button id="exportButton" class="helpButton" type="button" title="Export view as PNG (e)">
+        Export PNG
+      </button>
+      <button id="helpButton" class="helpButton" type="button" title="Keyboard shortcuts (?)">
+        Shortcuts
+      </button>
+    </header>
+
+    <main class="main">
+      <section class="viewer">
+        <div class="status" id="status"></div>
+        <div class="loadingOverlay hidden" id="loadingOverlay" aria-hidden="true">
+          <div class="loadingCard">Loading…</div>
+        </div>
+        <canvas id="signalCanvas" width="1200" height="320"></canvas>
+        <canvas id="geneCanvas" width="1200" height="140"></canvas>
+        <div class="tooltip hidden" id="tooltip" role="status" aria-live="polite"></div>
+      </section>
+    </main>
+
+    <div id="helpOverlay" class="overlay hidden" aria-hidden="true">
+      <div class="overlayCard" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+        <div class="overlayHeader">
+          <div class="overlayTitle">Keyboard shortcuts</div>
+          <button id="helpClose" class="overlayClose" type="button">Close</button>
+        </div>
+        <div class="overlayBody" id="helpBody"></div>
+        <div class="overlayFooter">Toggle this panel with <kbd>?</kbd> or <kbd>h</kbd>. Close with <kbd>Esc</kbd>.</div>
+      </div>
+    </div>
+
+    <div id="tracksOverlay" class="overlay hidden" aria-hidden="true">
+      <div class="overlayCard" role="dialog" aria-modal="true" aria-label="Reorder tracks">
+        <div class="overlayHeader">
+          <div class="overlayTitle">Reorder tracks</div>
+          <button id="tracksClose" class="overlayClose" type="button">Close</button>
+        </div>
+        <div class="overlayBody" id="tracksActions">
+          <div class="hint">
+            Tip: select multiple lanes and click <b>Overlay</b> to stack them in one lane.
+          </div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button id="overlayBtn" class="overlayClose" type="button">Overlay selected</button>
+            <button id="unoverlayBtn" class="overlayClose" type="button">Ungroup selected</button>
+            <button id="clearOverlayBtn" class="overlayClose" type="button">Clear all overlays</button>
+          </div>
+        </div>
+        <div class="overlayBody" id="tracksBody"></div>
+        <div class="overlayFooter">This only changes the display order (no data reload).</div>
+      </div>
+    </div>
+
+    <script type="module" src="/static/app.js"></script>
+  </body>
+</html>
+
