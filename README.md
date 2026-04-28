@@ -25,10 +25,10 @@ git clone https://github.com/SerhatAktay/proBrow.git
 cd proBrow
 
 # Use a built-in genome annotation (downloads once, cached for future runs):
-./probrow.sh --genome hg38 --bigwig-folder /path/to/bigwigs/
+./probrow.sh -g hg38 -i /path/to/bigwigs/
 
 # Or bring your own GTF:
-./probrow.sh --genes /path/to/genes.gtf --bigwig-folder /path/to/bigwigs/
+./probrow.sh --genes /path/to/genes.gtf -i /path/to/bigwigs/
 ```
 
 On first run it creates a virtualenv, installs dependencies, starts the server, and opens your browser. Stop with `Ctrl+C`.
@@ -37,7 +37,7 @@ On first run it creates a virtualenv, installs dependencies, starts the server, 
 
 ## Loading data
 
-### bigWig files (`--bigwig-folder`)
+### bigWig files (`-i` / `--bigwig-folder`)
 
 Give it a folder and proBrow will scan recursively for `.bw` / `.bigWig` files. It guesses strand from filename tokens (`plus`, `pos`, `fwd`, `forward`, `minus`, `neg`, `rev`, `reverse`) and groups files into samples by removing those tokens from the name. Files with no recognisable strand token are skipped.
 
@@ -47,10 +47,10 @@ If auto-detection doesn't work for your naming scheme, use explicit `--track` fl
 ./probrow.sh \
   --track "WT,/path/WT_plus.bw,+" \
   --track "WT,/path/WT_minus.bw,-" \
-  --genome hg38
+  -g hg38
 ```
 
-### Gene annotations (`--genome` or `--genes`)
+### Gene annotations (`-g` / `--genome` or `--genes`)
 
 The easiest option is `--genome`, which downloads and caches a GTF for common assemblies:
 
@@ -113,10 +113,10 @@ The **Tracks** button lets you reorder lanes and overlay multiple samples. **Exp
 
 | Flag | Description |
 |---|---|
-| `--bigwig-folder PATH` | Folder to scan for bigWig files |
+| `-i`, `--bigwig-folder PATH` | Folder to scan for bigWig files |
 | `--track NAME,PATH,STRAND` | Explicit track (repeatable) |
 | `--genes PATH` | GTF/GFF3 or TSV annotation |
-| `--genome NAME` | Built-in annotation (downloads on first use) |
+| `-g`, `--genome NAME` | Built-in annotation (downloads on first use) |
 | `--config PATH` | TOML config file |
 | `--host HOST` | Bind host (default: `127.0.0.1`) |
 | `--port PORT` | Port (default: random free port) |

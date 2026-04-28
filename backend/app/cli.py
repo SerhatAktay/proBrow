@@ -235,7 +235,7 @@ def main() -> None:
         help="Gene annotation file: GTF/GFF3 or TSV with columns chr,start,end,name,strand.",
     )
     parser.add_argument(
-        "--genome",
+        "-g", "--genome",
         default=None,
         metavar="NAME",
         help=(
@@ -244,7 +244,7 @@ def main() -> None:
         ),
     )
     parser.add_argument(
-        "--bigwig-folder",
+        "-i", "--bigwig-folder",
         default=None,
         help="Folder containing .bw/.bigWig files; auto-detect plus/minus from filenames and pair by sample name.",
     )
