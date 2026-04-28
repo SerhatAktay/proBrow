@@ -1,14 +1,63 @@
 from __future__ import annotations
 
 import argparse
+import itertools
 import os
 import re
 import socket
+import sys
+import threading
+import time
 import urllib.request
 import webbrowser
 from pathlib import Path
 
 import uvicorn
+
+
+# ---------------------------------------------------------------------------
+# Terminal spinner
+# ---------------------------------------------------------------------------
+
+class _Spinner:
+    """
+    Shows a braille spinner on a TTY while a blocking operation runs.
+    Used as a context manager::
+
+        with _Spinner("Indexing genes"):
+            slow_work()
+
+    On non-TTY output (piped / redirected) it just prints a plain line so
+    the message still appears in logs.
+    """
+    _FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+    def __init__(self, label: str) -> None:
+        self._label = label
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def _run(self) -> None:
+        if not sys.stdout.isatty():
+            print(f"  {self._label}…", flush=True)
+            return
+        for ch in itertools.cycle(self._FRAMES):
+            sys.stdout.write(f"\r  {self._label}… {ch} ")
+            sys.stdout.flush()
+            if self._stop.wait(0.08):
+                break
+
+    def __enter__(self) -> "_Spinner":
+        self._thread.start()
+        return self
+
+    def __exit__(self, *_) -> None:
+        self._stop.set()
+        self._thread.join()
+        if sys.stdout.isatty():
+            # overwrite the spinner line with a clean "done" tick
+            sys.stdout.write(f"\r  {self._label}… ✓\n")
+            sys.stdout.flush()
 
 from .config import load_config_from_args
 from .main import create_app
@@ -290,14 +339,20 @@ def main() -> None:
     if args.bigwig_folder and not os.path.isabs(args.bigwig_folder):
         args.bigwig_folder = str(Path(invoke_cwd, args.bigwig_folder))
 
-    # Resolve gene annotation: --genes takes priority; fall back to --genome.
+    _HR = "─" * 44
+    print(f"\n  proBrow\n  {_HR}")
+
+    # ── [1/3] Gene annotation ──────────────────────────────────────────────
     if args.genes:
         if args.genome:
-            print("Note: --genome is ignored because --genes was also provided.")
+            print("  [1/3] Gene annotation  (--genome ignored, --genes takes priority)")
+        else:
+            print(f"  [1/3] Gene annotation:  {Path(args.genes).name}")
     elif args.genome:
+        print(f"  [1/3] Fetching {args.genome} annotation…")
         args.genes = _fetch_genome_gtf(args.genome)
     else:
-        print("Note: no gene annotation loaded. Use --genes or --genome to enable gene search and display.")
+        print("  [1/3] No gene annotation  (tip: add -g / --genome to enable gene search)")
 
     tracks = list(args.track)
     if args.bigwig_folder:
@@ -305,16 +360,26 @@ def main() -> None:
 
     if not tracks:
         parser.error(
-            "Provide at least one --track or --bigwig-folder. Example: --track 'sampleA,/path/sampleA_plus.bw,+'"
+            "Provide at least one --track or -i / --bigwig-folder.\n"
+            "  Example: -i /path/to/bigwigs/ -g hg38"
         )
 
+    # ── [2/3] Build app + gene index ──────────────────────────────────────
     cfg = load_config_from_args(tracks, args.genes)
-    app = create_app(cfg)
+    _index_label = "[2/3] Indexing gene annotation" if args.genes else "[2/3] Initializing"
+    with _Spinner(_index_label):
+        app = create_app(cfg)
 
+    # ── [3/3] Start server ─────────────────────────────────────────────────
     port = _pick_port(args.port)
     url = f"http://{args.host}:{port}/"
+    print(f"  [3/3] Server ready →  {url}")
+
     if not args.no_open:
         webbrowser.open(url)
+
+    print(f"  {_HR}")
+    print("  Press Ctrl+C to stop.\n")
 
     uvicorn.run(
         app,

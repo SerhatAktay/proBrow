@@ -439,6 +439,8 @@ function renderTracksOverlay() {
     () => {
       const keys = Array.from(selected);
       if (keys.length < 2) return;
+      if (keys.length > 2 &&
+          !confirm(`You're about to overlay ${keys.length} samples. More than 2 overlays can be hard to read — continue?`)) return;
       normalizeTrackGroupsToOrder();
       const groups = displayedTrackGroups();
       const remaining = groups
@@ -807,20 +809,20 @@ function drawSignal() {
     .map((g) => g.map((k) => tracks.find((t) => trackKey(t) === k)).filter(Boolean))
     .filter((arr) => arr.length);
 
-  // Resize height based on number of tracks (stacked lanes):
-  // - few tracks: make lanes tall
-  // - many tracks: shrink lanes to fit in viewport
-  const maxAvail = Math.max(
-    240,
-    Math.floor(window.innerHeight - canvas.getBoundingClientRect().top - 140)
-  );
-  const maxLane = 420;
-  const minLane = 120;
-  const targetLane = 350;
-  const ideal = lanes.length ? lanes.length * targetLane : 240;
-  const cssH = clamp(ideal, 240, maxAvail);
-  const laneH = lanes.length ? clamp(cssH / lanes.length, minLane, maxLane) : targetLane;
-  canvas.style.height = `${Math.max(240, Math.round(lanes.length * laneH))}px`;
+  // Dynamic lane height:
+  //  • Measure what's actually above and below the signal canvas so we don't
+  //    guess at offsets: topbar + status live above; gene canvas lives below.
+  //  • Divide the remaining viewport height evenly across lanes → tracks fill screen.
+  //  • Cap at maxLane so a single lane doesn't balloon when there are few tracks.
+  //  • Floor at minLane for readability; canvas then exceeds viewport → page scrolls.
+  const signalDocTop = canvas.getBoundingClientRect().top + window.scrollY;
+  const geneCanvasH  = (el.geneCanvas.offsetHeight || 140) + 6; // +6 = CSS margin-top
+  const viewportAvail = Math.max(300, window.innerHeight - signalDocTop - geneCanvasH - 16);
+  const minLane = 160;
+  const maxLane = 480;
+  const n = Math.max(1, lanes.length);
+  const laneH = clamp(Math.floor(viewportAvail / n), minLane, maxLane);
+  canvas.style.height = `${n * laneH}px`;
 
   const { w, h } = resizeCanvasToCSSPixels(canvas);
   const ctx = canvas.getContext("2d");
@@ -839,21 +841,25 @@ function drawSignal() {
   const padBottom = 6;
   const laneHeightPx = Math.floor((h - padTop - padBottom) / Math.max(1, lanes.length));
 
-  function tint(hex, factor) {
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    const rr = clamp(Math.round(r * factor), 0, 255);
-    const gg = clamp(Math.round(g * factor), 0, 255);
-    const bb = clamp(Math.round(b * factor), 0, 255);
-    return `rgb(${rr},${gg},${bb})`;
-  }
-
-  function overlayColor(base, idx) {
-    // Stronger separation between overlays while staying strand-consistent.
-    const factors = [1.0, 0.62, 1.28, 0.82, 1.12, 0.48, 1.42];
-    return tint(base, factors[idx % factors.length]);
-  }
+  // Overlay color palettes — optimised for the common 2-sample case.
+  // Samples 0 and 1 get the biggest hue jump so they're unmistakable at a glance.
+  // Alpha < 1 lets semi-transparent filled areas blend where signals overlap.
+  const _overlayPlusColors = [
+    "rgba(220,  38,  38, 0.80)",   // #0 vivid red
+    "rgba(180,  15, 100, 0.74)",   // #1 deep magenta — large hue jump from red
+    "rgba(234,  88,  12, 0.76)",   // #2 orange-red
+    "rgba(127,  10,  34, 0.80)",   // #3 dark wine
+    "rgba(248, 113, 113, 0.74)",   // #4 light coral
+  ];
+  const _overlayMinusColors = [
+    "rgba( 37,  99, 235, 0.80)",   // #0 vivid blue
+    "rgba( 13, 148, 136, 0.74)",   // #1 teal — large hue jump from blue
+    "rgba( 99,  60, 200, 0.76)",   // #2 indigo-purple
+    "rgba( 15,  40, 120, 0.80)",   // #3 deep navy
+    "rgba( 96, 165, 250, 0.74)",   // #4 sky blue
+  ];
+  function overlayPlusColor(idx)  { return _overlayPlusColors[idx  % _overlayPlusColors.length]; }
+  function overlayMinusColor(idx) { return _overlayMinusColors[idx % _overlayMinusColors.length]; }
 
   function drawOverlayLine(arr, ySign, y0, half, color, dash) {
     if (!arr || arr.length < 2) return;
@@ -870,6 +876,31 @@ function drawSignal() {
     }
     ctx.stroke();
     ctx.setLineDash([]);
+  }
+
+  // Per-base bar rendering for overlay mode. Uses semi-transparent RGBA fill so
+  // bars from multiple samples blend visually via canvas source-over compositing.
+  function drawOverlayBars(arr, ySign, y0, half, color, bw, xPad, innerW) {
+    if (!arr || !arr.length) return;
+    ctx.fillStyle = color;
+    for (let i = 0; i < arr.length; i++) {
+      const v = arr[i];
+      if (!v) continue;
+      const x0 = i * bw + xPad;
+      if (ySign < 0) {
+        // plus strand → bars grow upward from baseline
+        const y = y0 - (v / yMax) * half;
+        const hBar = y0 - y;
+        if (hBar <= 0) continue;
+        ctx.fillRect(x0, y, innerW, hBar);
+      } else {
+        // minus strand → bars grow downward from baseline
+        const y = y0 + (v / yMax) * half;
+        const hBar = y - y0;
+        if (hBar <= 0) continue;
+        ctx.fillRect(x0, y0, innerW, hBar);
+      }
+    }
   }
 
   // ruler at top + get tick spacing
@@ -992,47 +1023,79 @@ function drawSignal() {
     const minusColor = "#2563eb";
 
     if (laneTracks.length > 1) {
-      const dashPatterns = [
-        [],
-        [10, 6],
-        [4, 4],
-        [14, 6, 4, 6],
-        [2, 6],
-        [18, 8],
-      ];
-      for (let li = 0; li < laneTracks.length; li++) {
-        const t = laneTracks[li];
-        const dash = dashPatterns[li % dashPatterns.length];
-        drawOverlayLine(t.plus || [], -1, y0, half, overlayColor(plusColor, li), dash);
-        drawOverlayLine(t.minus || [], +1, y0, half, overlayColor(minusColor, li), dash);
+      const usePerBase = perBase && lenBp <= 20000;
+
+      if (usePerBase) {
+        // Per-base bar overlay: each sample drawn as semi-transparent bars so they
+        // visually blend via alpha compositing. Drawn back-to-front so sample 0 is
+        // most prominent at the base.
+        const n = Math.min(lenBp, ...(laneTracks.map(t =>
+          Math.min((t.plus||[]).length || lenBp, (t.minus||[]).length || lenBp))));
+        const bw = w / Math.max(1, n);
+        const innerW = Math.max(1, bw * 0.72);
+        const xPad = Math.max(0, (bw - innerW) / 2);
+        for (let li = 0; li < laneTracks.length; li++) {
+          const t = laneTracks[li];
+          drawOverlayBars(t.plus  || [], -1, y0, half, overlayPlusColor(li),  bw, xPad, innerW);
+          drawOverlayBars(t.minus || [], +1, y0, half, overlayMinusColor(li), bw, xPad, innerW);
+        }
+      } else {
+        // Binned overlay: semi-transparent filled polygons, same style as single-track
+        // but with alpha so the two areas blend visually where they overlap.
+        for (let li = 0; li < laneTracks.length; li++) {
+          const t = laneTracks[li];
+          const plus  = t.plus  || [];
+          const minus = t.minus || [];
+
+          // plus area (upward)
+          ctx.fillStyle = overlayPlusColor(li);
+          ctx.beginPath();
+          ctx.moveTo(0, y0);
+          for (let i = 0; i < plus.length; i++) {
+            const x = (i / Math.max(1, plus.length - 1)) * w;
+            ctx.lineTo(x, y0 - (plus[i] / yMax) * half);
+          }
+          ctx.lineTo(w, y0);
+          ctx.closePath();
+          ctx.fill();
+
+          // minus area (downward)
+          ctx.fillStyle = overlayMinusColor(li);
+          ctx.beginPath();
+          ctx.moveTo(0, y0);
+          for (let i = 0; i < minus.length; i++) {
+            const x = (i / Math.max(1, minus.length - 1)) * w;
+            ctx.lineTo(x, y0 + (minus[i] / yMax) * half);
+          }
+          ctx.lineTo(w, y0);
+          ctx.closePath();
+          ctx.fill();
+        }
       }
 
-      // Small legend at top-right of the lane (names + style).
+      // Legend: two color swatches (plus / minus) + sample name.
       const legendMax = 5;
       ctx.save();
       ctx.font = "16px ui-sans-serif, system-ui";
       ctx.textBaseline = "top";
-      ctx.fillStyle = "rgba(15,23,42,0.85)";
       const startX = Math.max(10, w - 420);
       let yy = laneTop + 6;
       for (let li = 0; li < Math.min(legendMax, laneTracks.length); li++) {
         const tt = laneTracks[li];
-        const dash = dashPatterns[li % dashPatterns.length];
-        // sample line (plus color family)
-        ctx.strokeStyle = overlayColor(plusColor, li);
-        ctx.lineWidth = 3;
-        ctx.lineCap = "round";
-        ctx.setLineDash(dash);
-        ctx.beginPath();
-        ctx.moveTo(startX, yy + 10);
-        ctx.lineTo(startX + 34, yy + 10);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.fillText(tt.name || tt.id, startX + 42, yy + 2);
+        // Plus swatch
+        ctx.fillStyle = overlayPlusColor(li);
+        ctx.fillRect(startX, yy + 3, 14, 10);
+        // Minus swatch
+        ctx.fillStyle = overlayMinusColor(li);
+        ctx.fillRect(startX + 16, yy + 3, 14, 10);
+        // Name
+        ctx.fillStyle = "rgba(15,23,42,0.85)";
+        ctx.fillText(tt.name || tt.id, startX + 38, yy + 2);
         yy += 22;
       }
       if (laneTracks.length > legendMax) {
-        ctx.fillText(`+${laneTracks.length - legendMax} more…`, startX + 42, yy + 2);
+        ctx.fillStyle = "rgba(15,23,42,0.85)";
+        ctx.fillText(`+${laneTracks.length - legendMax} more…`, startX + 38, yy + 2);
       }
       ctx.restore();
     } else if (perBase && lenBp <= 20000) {
